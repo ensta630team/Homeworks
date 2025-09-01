@@ -18,7 +18,6 @@ def test_stationarity(df_simulated):
 
 
 def get_GIRD(sigma_u, n_periods, k, psi_coeffs):
-    
     girf = np.zeros((n_periods + 1, k, k))
     for j in range(k):
         e_j = np.zeros(k)

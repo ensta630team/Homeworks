@@ -6,7 +6,7 @@ from source.data.sampling import generate_stationary_var
 from source.data.transform import create_var_dataset
 from source.models.ols import OLS
 from source.fit.error import get_var_standard_errors
-
+from source.statistics import impulse_response as irf
 
 class VAR:
 
@@ -54,7 +54,6 @@ class VAR:
         """
         if not self._is_stationary():
             _, ev = self._check_stationarity()
-            print('abs Eigenvalues: ', np.abs(ev))
             raise ValueError("La media incondicional no está definida para un proceso no estacionario.")
         
         if self.c is None or self.phi is None:
@@ -103,11 +102,38 @@ class VAR:
         
         return unconditional_std
 
-    def get_irf(self, H: int = 20) -> np.ndarray:
+    def get_irf(self, H: int = 20, method='cholesky') -> np.ndarray:
         """
-        Calcula la Función de Impulso-Respuesta (IRF).
+        Calcula la Función de Impulso-Respuesta (IRF) para H periodos.
+        
+        Argumentos:
+            H (int): El horizonte de tiempo para el cual calcular la IRF.
+
+        Retorna:
+            np.ndarray: Un array de forma (H, n, n) donde n es el inp_dim.
+                        Cada matriz IRF[s, :, :] es la respuesta en el tiempo s.
         """
-        return None
+        if self.phi is None or self.omega_hat is None:
+            raise ValueError("El modelo debe ser ajustado primero con el método .fit().")
+        
+        # 1. Calcular la secuencia de matrices Psi
+        # H+1 porque la secuencia incluye el término 0
+        psi_sequence = self._compute_psi_sequence(H=H + 1)
+        
+        # 2. Descomponer triangularmente la matriz de covarianzas
+        
+        if method == 'cholesky':
+            irf_list = irf.cholesky_irf(psi_sequence, self.omega_hat, H)
+        elif method == 'girf':
+            assert self.omega_hat.shape[0] == self.inp_dim
+            irf_list = irf.generalized_irf(psi_sequence, self.omega_hat, H)
+        # aqui se pueden seguir agregando metodos con "elif"
+        else:
+            print('Ese metodo no esta implementado jeje')
+ 
+    
+        return irf_list
+
 
     def sample(self, n_samples: int, initial_values: np.ndarray = None, burn_in: int = 0) -> np.ndarray:
         """
@@ -175,7 +201,7 @@ class VAR:
         # Creamos la matriz de predictores con "p" rezagos
         X_ols, y_ols = create_var_dataset(X, lag=self.p, add_intercept=True)
         T_effective = X_ols.shape[0]
-
+        
         # Ajustamos el modelo y guardamos la matriz de coeficientes completa
         self.pi = np.linalg.inv(X_ols.T @ X_ols) @ (X_ols.T @ y_ols)
 
@@ -208,16 +234,41 @@ class VAR:
             raise ValueError("El modelo debe ser ajustado primero con el método .fit()")
         return X @ self.pi
 
-
-    # ====== METODOS PRIVADOS ====== 
+    # ===================================================================================
+    # ====== METODOS PRIVADOS ===========================================================
+    # ===================================================================================
+    def _compute_psi_sequence(self, H: int) -> list:
+        """
+        Calcula la sucesión de matrices Ψ_i para i = 0, ..., H-1.
+        Esta es la representación VMA(inf) del proceso VAR.
+        """
+        if len(self.phi) != self.p:
+            raise ValueError(f"Se esperaban {self.p} matrices Φ, pero se recibieron {len(self.phi)}")
+        
+        n = self.inp_dim
+        
+        # Inicializar la lista de Ψ
+        Psi = []
+        
+        # Ψ₀ = Id (matriz identidad)
+        Psi0 = np.eye(n)
+        Psi.append(Psi0)
+        
+        # Calcular los términos restantes
+        for s in range(1, H):
+            suma = np.zeros((n, n))
+            # Calcular: Ψ_s = sum_{i=1}^p Φ_i * Ψ_{s-i}
+            for i in range(1, self.p + 1):
+                if s - i >= 0:  
+                    suma += np.dot(self.phi[i-1], Psi[s-i])
+            Psi.append(suma)
+        return Psi
+    
     def _is_stationary(self) -> bool:
         """
         Verifica si el proceso es estacionario usando un valor en caché.
         """
         self._is_stationary_cached, ev = self._check_stationarity()
-        if not self._is_stationary_cached:
-            print('[NE]. abs Eigenvalues: ', np.abs(ev))
-
         return self._is_stationary_cached
     
     def _check_stationarity(self) -> bool:
@@ -254,8 +305,81 @@ class VAR:
         bottom = np.hstack([I, zeros])
         F = np.vstack([top, bottom])
         return F
-    
-    # ====== PROPODIEDADES ========
+
+    # ==================================================================================
+    # ====== PROPODIEDADES =============================================================
+    # ==================================================================================
     @property
     def order(self):
         return self.p
+    
+    # ==================================================================================
+    # ==================================================================================
+    # ==================================================================================
+    def __str__(self):
+        """
+        Representación en string del modelo VAR, mostrando un resumen de sus
+        parámetros y propiedades.
+        """
+        header = f"{'='*60}\n"
+        header += f"{'Vector Autoregression (VAR) Model Summary':^60}\n"
+        header += f"{'='*60}\n"
+
+        # --- Propiedades básicas ---
+        info = f"VAR(p={self.p}, n={self.inp_dim})\n"
+        
+        # --- Estacionariedad ---
+        try:
+            is_stationary, eigenvalues = self._check_stationarity()
+            max_eig = np.max(np.abs(eigenvalues)) if len(eigenvalues) > 0 else 0
+            info += f"Estacionario: {'Sí' if is_stationary else 'No'} (Max Eigenvalue: {max_eig:.4f})\n"
+        except Exception:
+            info += "Estacionario: No determinado\n"
+        
+        info += f"{'-'*60}\n"
+
+        # --- Propiedades de Largo Plazo ---
+        info += f"{'Propiedades de Largo Plazo':^60}\n"
+        # Media incondicional
+        try:
+            mean = self.get_unconditional_mean()
+            info += f"Media Incondicional:\n{np.array2string(mean, precision=4)}\n\n"
+        except (ValueError, np.linalg.LinAlgError) as e:
+            info += f"Media Incondicional: No definida\n\n"
+            
+        # Desviación estándar incondicional
+        try:
+            std = self.get_unconditional_std()
+            info += f"D.E. Incondicional:\n{np.array2string(std, precision=4)}\n"
+        except (ValueError, np.linalg.LinAlgError) as e:
+            info += f"D.E. Incondicional: No definida\n"
+            
+        info += f"{'-'*60}\n"
+
+        # --- Coeficientes ---
+        info += f"{'Coeficientes del Modelo':^60}\n"
+        # Intercepto (c)
+        if self.c is not None:
+            info += f"Intercepto (c):\n{np.array2string(self.c, precision=4, suppress_small=True)}\n\n"
+        else:
+            info += "Intercepto (c): No definido\n\n"
+            
+        # Matrices Phi
+        if self.phi is not None and len(self.phi) > 0:
+            for i, phi_matrix in enumerate(self.phi):
+                info += f"Matriz Phi_{i+1}:{phi_matrix.shape}\n"
+        else:
+            info += "Matrices Phi: No definidas\n\n"
+        
+        info += f"{'-'*60}\n"
+
+        # --- Matriz de Covarianza de Residuos ---
+        info += f"{'Matriz de Covarianza de Residuos (Omega)':^60}\n"
+        if hasattr(self, 'omega_hat') and self.omega_hat is not None:
+            info += f"Omega: {self.omega_hat.shape}\n"
+        else:
+            info += "No definida (el modelo no ha sido ajustado)\n"
+
+        footer = f"{'='*60}\n"
+        
+        return header + info + footer

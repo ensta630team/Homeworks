@@ -2,6 +2,7 @@ import numpy as np
 import sympy as sp
 
 from scipy.linalg import lu
+from scipy.linalg import cholesky
 
 
 def calculate_irf(F, H, phi=None, method='exact'):
@@ -62,6 +63,14 @@ def calculate_irf(F, H, phi=None, method='exact'):
 # ============================================================================
 # ====================  ~~~~VAR~~~~ ==========================================
 # ============================================================================
+def compute_IRF_VAR(Psi, omega, s):
+    """
+    Cálculo de IRF usando descomposición de Cholesky
+    """
+    L = cholesky(omega, lower=True)
+    IRF_s = np.dot(Psi[s], L)
+    return IRF_s
+
 def cholesky_irf(psi, omega, H):
     """
     Calcula la Función de Impulso-Respuesta (IRF) para H periodos.
@@ -114,3 +123,39 @@ def generalized_irf(psi: list, omega: np.ndarray, H: int) -> np.ndarray:
             irf_results[h, :, j] = numerador / sigma_jj[j]
 
     return irf_results
+
+# Descomposición de la Varianza
+def compute_variance_decomposition(Psi, omega, horizon):
+    """
+    Calcula la descomposición de varianza del error de pronóstico
+    
+    Argumentos:
+        Psi: Lista de matrices Ψ
+        omega: Matriz de covarianza
+        horizon: Horizonte temporal
+    
+    Retorna:
+        Matriz n x n donde cada fila suma 1 (porcentajes)
+    """
+    n = omega.shape[0]
+    L = cholesky(omega, lower=True)
+    
+    # Calcular contribución de cada shock a la varianza
+    fevd = np.zeros((n, n))
+    
+    for s in range(horizon + 1):
+        theta_s = np.dot(Psi[s], L)
+        for i in range(n):
+            for j in range(n):
+                fevd[i, j] += theta_s[i, j]**2
+    
+    # Normalizar a porcentajes
+    row_sums = fevd.sum(axis=1, keepdims=True)
+    fevd_percent = fevd / row_sums * 100
+    
+    return fevd_percent
+
+
+################################################################################
+################################################################################
+

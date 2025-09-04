@@ -26,7 +26,7 @@ def load_data(path):
     print('[INFO] ¡Datos cargados exitosamente!')
     return df
 
-def create_dataset(path, problem=5):
+def create_dataset(path, problem=6):
     """
     Carga y preprocesa los datos según el problema especificado.
 
@@ -34,6 +34,7 @@ def create_dataset(path, problem=5):
         path (str): La ruta al archivo de datos.
         problem (int): El número del problema para determinar el preprocesamiento.
         5 = problema 1 de la tarea 2
+        6 = problema 1 de la tarea 3
     Retorna:
         Un diccionario con las series de tiempo (si problem=3) o el DataFrame original (si problem=4).
     """
@@ -99,3 +100,22 @@ def create_dataset(path, problem=5):
             'i': i_t
         }
     
+    if problem == 6:
+        p = np.log(df['IPC'].to_numpy())
+        y = np.log(df['IMACEC'].to_numpy())
+        i = df['Tasa de política'].to_numpy()/100.
+
+        dtp = df['IPC'].diff(periods= 1).fillna(0.)
+        dty = df['IMACEC'].diff(periods= 1).fillna(0.)
+        
+        t = df['Periodo'].dt.date
+        t = t.to_numpy()
+
+        return {
+            'p': p,
+            'y': y,
+            'i': i,
+            'dtp': dtp,
+            'dty': dty,
+            't': t
+        }

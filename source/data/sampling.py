@@ -1,5 +1,7 @@
 import numpy as np
 from numpy.polynomial.polynomial import polyfromroots
+import statsmodels.api as sm
+
 
 # Diccionario que mapea nombres de distribuciones a funciones lambda para generar parámetros aleatorios.
 # Esto permite crear parámetros de forma flexible a partir de diferentes distribuciones de probabilidad.
@@ -131,3 +133,59 @@ def initialize_params(params_distribution, **kwargs):
     else:
         raise ValueError(f"'{params_distribution}' no es un valor válido para params_distribution.")
     
+def create_time_series(kind, n_obs, randseed=None, **kwargs):
+    """
+    Crea series de tiempo con propiedades específicas.
+    
+    Args:
+        kind (str): Tipo de serie ('stationary', 'unit_root', 'break', 'outlier', 'nonlinear_trend').
+        n_obs (int): Número de observaciones.
+        kwargs: Parámetros adicionales como break_point, outlier_magnitude, etc.
+
+    Returns:
+        np.ndarray: La serie de tiempo simulada.
+    """
+    
+
+    if kind == 'stationary':
+        if randseed is not None: np.random.seed(randseed)
+        # Serie estacionaria (proceso AR(1))
+        # Phi = 0.5 (abs(phi) < 1)
+        ar_params = np.array([0.5])
+        ma_params = np.array([0])
+        return sm.tsa.arma_generate_sample(ar=np.r_[1, -ar_params], ma=np.r_[1, ma_params], nsample=n_obs)
+    
+    elif kind == 'unit_root':
+        if randseed is not None: np.random.seed(randseed+2)
+        # Proceso de paseo aleatorio (random walk)
+        series = np.cumsum(np.random.normal(0, 1, n_obs))
+        return series
+    
+    elif kind == 'break':
+        if randseed is not None: np.random.seed(randseed+4)
+        # Paseo aleatorio con quiebre estructural
+        break_point = kwargs.get('break_point', int(n_obs * 0.5))
+        break_magnitude = kwargs.get('break_magnitude', 5.0)
+        series = np.cumsum(np.random.normal(0, 1, n_obs))
+        series[break_point:] += break_magnitude
+        return series
+    
+    elif kind == 'outlier':
+        if randseed is not None: np.random.seed(randseed+6)
+        # Paseo aleatorio con un valor atípico aditivo
+        outlier_point = kwargs.get('outlier_point', int(n_obs * 0.7))
+        outlier_magnitude = kwargs.get('outlier_magnitude', 10.0)
+        series = np.cumsum(np.random.normal(0, 1, n_obs))
+        series[outlier_point] += outlier_magnitude
+        return series
+    
+    elif kind == 'nonlinear_trend':
+        if randseed is not None: np.random.seed(randseed+8)
+        # Paseo aleatorio con una tendencia no lineal
+        series = np.cumsum(np.random.normal(0, 1, n_obs))
+        trend = np.linspace(0, 1, n_obs)
+        series += kwargs.get('trend_magnitude', 5.0) * trend**2
+        return series
+    
+    else:
+        raise ValueError("Tipo de serie no reconocido.")

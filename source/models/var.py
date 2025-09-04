@@ -18,9 +18,10 @@ class VAR:
                 params_distribution: str ="stationary",
                 **kwargs):
 
-        self.inp_dim = inp_dim
-        self.p       = p
-        
+        self.inp_dim   = inp_dim
+        self.p         = p
+        self.residuals = None # Esto es para guardar los residuos despues de ajustar con fit
+        self.y         = None
         # Estandarizar 'c' y 'sigma' para que siempre sean vectores
         if isinstance(c, (int, float)):
             self.c = np.ones(inp_dim) * c
@@ -116,18 +117,17 @@ class VAR:
         if self.phi is None or self.omega_hat is None:
             raise ValueError("El modelo debe ser ajustado primero con el método .fit().")
         
-        # 1. Calcular la secuencia de matrices Psi
+        # Calcular la secuencia de matrices Psi
         # H+1 porque la secuencia incluye el término 0
         psi_sequence = self._compute_psi_sequence(H=H + 1)
         
-        # 2. Descomponer triangularmente la matriz de covarianzas
-        
+        # Descomponer triangularmente la matriz de covarianzas
         if method == 'cholesky':
             irf_list = irf.cholesky_irf(psi_sequence, self.omega_hat, H)
         elif method == 'girf':
             assert self.omega_hat.shape[0] == self.inp_dim
             irf_list = irf.generalized_irf(psi_sequence, self.omega_hat, H)
-        # aqui se pueden seguir agregando metodos con "elif"
+        # OJO! Aqui se pueden seguir agregando metodos con "elif"
         else:
             print('Ese metodo no esta implementado jeje')
  
@@ -196,7 +196,53 @@ class VAR:
             
         # Descartar el período de burn-in y devolver ---
         return samples[burn_in:]
+    
+    def simulate(self, T: int, initial_values: np.ndarray = None):
+        """
+        Simula una trayectoria de T observaciones a partir de los parámetros ajustados del VAR.
+
+        Args:
+            T (int): El número de observaciones a simular.
+            initial_values (np.ndarray, optional): Los valores iniciales para los rezagos. 
+                                                    Si es None, se usarán ceros.
         
+        Returns:
+            np.ndarray: La serie de tiempo simulada de tamaño (T, n_vars).
+        """
+        if self.phi is None:
+            raise RuntimeError("El modelo debe ser ajustado primero con .fit()")
+
+        p, n_vars, _ = self.phi.shape
+        
+        # Usar los últimos p valores de los datos originales si no se proveen valores iniciales
+        if initial_values is None:
+            initial_values = self.y[-p:]
+
+        # Generar errores/innovaciones
+        # Cholesky de la matriz de covarianza de residuos para generar errores correlacionados
+        L = np.linalg.cholesky(self.omega_hat) 
+        innovations = (L @ np.random.randn(n_vars, T)).T
+
+        # Almacenar resultados
+        y_simulated = np.zeros((T, n_vars))
+        y_history = list(initial_values)
+        phi_pred_matrix = self.phi.transpose(1, 0, 2).reshape(n_vars, p * n_vars)
+        
+        for t in range(T):
+            # Construir el vector de rezagos Y_{t-1}, ..., Y_{t-p}
+            y_lags_flat = np.array(y_history[::-1]).flatten()
+            
+            # Calcular el valor predicho
+            y_t = self.c + phi_pred_matrix @ y_lags_flat + innovations[t]
+                
+            y_simulated[t, :] = y_t
+            
+            # Actualizar el historial
+            y_history.append(y_t)
+            y_history.pop(0)
+
+        return y_simulated
+
     def fit(self, X):
         # Creamos la matriz de predictores con "p" rezagos
         X_ols, y_ols = create_var_dataset(X, lag=self.p, add_intercept=True)
@@ -218,6 +264,10 @@ class VAR:
         y_pred = self.predict(X_ols)
         residuals_matrix = y_ols - y_pred
         
+        # Guardamos estos valores para futuros calculos
+        self.residuals = residuals_matrix
+        self.y = y_ols
+        
         # Usar las observaciones efectivas en el denominador
         self.omega_hat = (residuals_matrix.T @ residuals_matrix) / T_effective
         
@@ -237,6 +287,11 @@ class VAR:
     # ===================================================================================
     # ====== METODOS PRIVADOS ===========================================================
     # ===================================================================================
+    def _decompose_matrix(self, H=5):
+        psi = self._compute_psi_sequence(H+1)
+        M = irf.compute_variance_decomposition(psi, self.omega_hat, H)
+        return M
+    
     def _compute_psi_sequence(self, H: int) -> list:
         """
         Calcula la sucesión de matrices Ψ_i para i = 0, ..., H-1.

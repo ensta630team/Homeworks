@@ -149,6 +149,7 @@ def test_pp(A, q=4, regression='all'):
     
     add_result('Observaciones', T)
     add_result('Rezagos (q)', q)
+    add_result('Tipo de regresion', regression)
     
     return pd.DataFrame({'Metrica': metricas, 'Valor': valores})
 

@@ -24,15 +24,13 @@ def test_pp(A, q=4, regression='all'):
     Y = A[1:]
     T = len(Y)
     Cte = np.ones(T)
-    Trend = np.arange(1, T+1)
+    Trend = np.arange(1, T + 1)
     Rezago = A[:-1]
     
-    # Design matrices
     X1 = Rezago.reshape(-1, 1)
     X2 = np.column_stack([Cte, Rezago])
     X4 = np.column_stack([Cte, Rezago, Trend])
     
-    # OLS estimation
     Beta1 = np.linalg.inv(X1.T @ X1) @ X1.T @ Y if regression in ['case1', 'all'] else None
     Beta2 = np.linalg.inv(X2.T @ X2) @ X2.T @ Y if regression in ['case2', 'all'] else None
     Beta4 = np.linalg.inv(X4.T @ X4) @ X4.T @ Y if regression in ['case4', 'all'] else None
@@ -44,14 +42,12 @@ def test_pp(A, q=4, regression='all'):
         metricas.append(metric)
         valores.append(value)
     
-    # Critical values
     critical_values = {
         'case1': {'1%': -11.8, '5%': -7.3, '10%': -5.3},
         'case2': {'1%': -13.8, '5%': -8.1, '10%': -5.7},
         'case4': {'1%': -20.7, '5%': -14.1, '10%': -11.3}
     }
     
-    # Asymptotic parameters for p-value approximation
     asymptotic_params = {
         'case1': {'mean': -2.5, 'std': 3.0},
         'case2': {'mean': -3.0, 'std': 3.5},
@@ -63,7 +59,6 @@ def test_pp(A, q=4, regression='all'):
         p_value = stats.norm.cdf(statistic, loc=params['mean'], scale=params['std'])
         return min(p_value, 1 - p_value) * 2
     
-    # Case 1: No constant, no trend
     if regression in ['case1', 'all'] and Beta1 is not None:
         rho1 = Beta1[0]
         Resid1 = Y - X1 @ Beta1
@@ -84,14 +79,13 @@ def test_pp(A, q=4, regression='all'):
         
         p_value_zrho1 = calculate_p_value(Zrho1, 'case1')
         
-        add_result('Estadistico Zρ Case1', Zrho1)
-        add_result('Valor P Zρ Case1', p_value_zrho1)
-        add_result('ρ estimado Case1', rho1)
+        add_result('Estadistico Zrho Case1', Zrho1)
+        add_result('Valor P Zrho Case1', p_value_zrho1)
+        add_result('rho estimado Case1', rho1)
         
         for level, value in critical_values['case1'].items():
             add_result(f'Valor Critico {level} Case1', value)
     
-    # Case 2: With constant
     if regression in ['case2', 'all'] and Beta2 is not None:
         rho2 = Beta2[1]
         Resid2 = Y - X2 @ Beta2
@@ -112,14 +106,13 @@ def test_pp(A, q=4, regression='all'):
         
         p_value_zrho2 = calculate_p_value(Zrho2, 'case2')
         
-        add_result('Estadistico Zρ Case2', Zrho2)
-        add_result('Valor P Zρ Case2', p_value_zrho2)
-        add_result('ρ estimado Case2', rho2)
+        add_result('Estadistico Zrho Case2', Zrho2)
+        add_result('Valor P Zrho Case2', p_value_zrho2)
+        add_result('rho estimado Case2', rho2)
         
         for level, value in critical_values['case2'].items():
             add_result(f'Valor Critico {level} Case2', value)
     
-    # Case 4: With constant and trend
     if regression in ['case4', 'all'] and Beta4 is not None:
         rho4 = Beta4[1]
         Resid4 = Y - X4 @ Beta4
@@ -145,11 +138,11 @@ def test_pp(A, q=4, regression='all'):
         p_value_zrho4 = calculate_p_value(Zrho4, 'case4')
         p_value_zt4 = calculate_p_value(Zt4, 'case4')
         
-        add_result('Estadistico Zρ Case4', Zrho4)
-        add_result('Valor P Zρ Case4', p_value_zrho4)
+        add_result('Estadistico Zrho Case4', Zrho4)
+        add_result('Valor P Zrho Case4', p_value_zrho4)
         add_result('Estadistico Zt Case4', Zt4)
         add_result('Valor P Zt Case4', p_value_zt4)
-        add_result('ρ estimado Case4', rho4)
+        add_result('rho estimado Case4', rho4)
         
         for level, value in critical_values['case4'].items():
             add_result(f'Valor Critico {level} Case4', value)
@@ -160,11 +153,9 @@ def test_pp(A, q=4, regression='all'):
     
     return pd.DataFrame({'Metrica': metricas, 'Valor': valores})
 
-# Ejemplo de uso
 if __name__ == "__main__":
     np.random.seed(123)
     n = 100
     y = np.cumsum(np.random.normal(0, 1, n))
     resultados = test_pp(y, q=4, regression='case2')
-    print("=== Test de Phillips-Perron ===")
     print(resultados.to_string(index=False))

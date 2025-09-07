@@ -30,7 +30,9 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
     # Coeficientes de MacKinnon (1996) para los valores críticos del Z-t
     MACKINNON_COEFS = {
         'case1': { # Sin constante
-            '1%': [-2.5657, -3.76, -11.0], '5%': [-1.9410, -1.13, -2.8], '10%': [-1.6168, -0.36, -1.1]
+            '1%': [-2.5657, -3.76, -11.0], 
+            '5%': [-1.9410, -1.13, -2.8], 
+            '10%': [-1.6168, -0.36, -1.1]
         },
         'case2': { # Con constante
             '1%': [-3.4303, -17.86, -86.8], '5%': [-2.8615, -6.49, -27.2], '10%': [-2.5668, -3.52, -12.9]
@@ -41,7 +43,6 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
     }
     
     # --- Funciones auxiliares ---
-    
     def _calculate_pp_stats(residuals, T, q, rho, var_rho, s2):
         """Calcula los estadísticos Z-rho y Z-t."""
         def calculate_autocov(res, lag, n_obs):
@@ -61,35 +62,28 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
         return z_t
 
     def _get_decision_details(z_t, case, T, alpha):
-        """Calcula valores críticos, p-valor y genera la decisión."""
-        # Calcula el valor crítico para un nivel de significancia dado
+        """Calcula valores críticos, p-valor interpolado y genera la decisión."""
         def get_cv(level):
             c_inf, c_1, c_2 = MACKINNON_COEFS[case][level]
             return c_inf + c_1 / T + c_2 / (T**2)
 
         cv_1, cv_5, cv_10 = get_cv('1%'), get_cv('5%'), get_cv('10%')
         
-        # P-valor aproximado
-        if z_t < cv_1: p_value_approx = '< 0.01'
-        elif z_t < cv_5: p_value_approx = 'entre 0.01 y 0.05'
-        elif z_t < cv_10: p_value_approx = 'entre 0.05 y 0.10'
-        else: p_value_approx = '> 0.10'
+        critical_values = np.array([cv_1, cv_5, cv_10])
+        p_levels = np.array([0.01, 0.05, 0.10])
+        p_value = np.interp(z_t, critical_values, p_levels, right=1.0)
             
-        # Determinar el valor crítico relevante para la decisión
-        if alpha == 0.01: critical_value = cv_1
-        elif alpha == 0.05: critical_value = cv_5
-        elif alpha == 0.10: critical_value = cv_10
-        else: critical_value = get_cv(f'{int(alpha*100)}%') # Falla si no es 1, 5, o 10
+        critical_value_map = {0.01: cv_1, 0.05: cv_5, 0.10: cv_10}
+        critical_value = critical_value_map.get(alpha, get_cv(f'{int(alpha*100)}%'))
             
-        # Decisión e interpretación
-        if z_t < critical_value:
+        if p_value < alpha:
             decision = f'Rechazar H₀ (α={alpha})'
             interpretation = 'La serie es estacionaria'
         else:
             decision = f'No Rechazar H₀ (α={alpha})'
             interpretation = 'La serie tiene una raíz unitaria'
             
-        return critical_value, p_value_approx, decision, interpretation
+        return critical_value, p_value, decision, interpretation
 
     # --- Preparación de datos y ejecución ---
     A = np.asarray(A, dtype=float).flatten()
@@ -122,19 +116,17 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
             cv, pval, dec, interp = _get_decision_details(z_t, case_key, T, alpha)
             
             resultados_finales.append({
-                'Caso': nombre,
-                'Estadístico Z-t': z_t,
-                f'Valor Crítico ({int(alpha*100)}%)': cv,
-                'P-valor (aprox.)': pval,
-                'Decisión': dec,
-                'Interpretación': interp
+                'model': nombre,
+                'statistic': z_t,
+                'p-value': pval,
             })
+
         except np.linalg.LinAlgError:
             # En caso de multicolinealidad o matriz singular
             resultados_finales.append({
-                'Caso': nombre, 'Estadístico Z-t': np.nan,
-                f'Valor Crítico ({int(alpha*100)}%)': np.nan, 'P-valor (aprox.)': 'Error',
-                'Decisión': 'Error de cálculo', 'Interpretación': 'No se pudo estimar el modelo'
+                'model': nombre,
+                'statistic': None,
+                'p-value': None,
             })
 
-    return pd.DataFrame(resultados_finales).set_index('Caso')
+    return pd.DataFrame(resultados_finales)

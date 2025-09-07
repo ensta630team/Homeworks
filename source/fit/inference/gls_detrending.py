@@ -30,88 +30,79 @@ def test_gls(A, d=2, p=1, alpha=0.05):
     # Validaciones
     if T < 20:
         raise ValueError("La serie es demasiado corta para el test ADF-GLS")
-    if p >= T:
-        raise ValueError("El orden p no puede ser mayor o igual al largo de la serie")
+    if p >= T - d: # Corregido para evitar matriz singular
+        raise ValueError("El orden p es demasiado grande para el largo de la serie")
     if alpha not in [0.01, 0.05, 0.10]:
-        raise ValueError("El nivel de significancia (alpha) debe ser 0.01, 0.05, o 0.10.")
+        # Se puede relajar esta restricción ahora que el p-valor es numérico
+        print(f"Advertencia: alpha={alpha} no es un nivel estándar, la decisión se basará en el p-valor numérico.")
 
-    # --- Cálculos del test GLS ---
+    # --- 1. Des-tendenciación GLS ---
     if d == 2:
         c = -7.0
         z = np.ones((T, 1))
-        zgls = np.vstack([[1], z[1:] - (1 + c/T) * z[:-1]])
         tipo_deterministico = "Intercepto"
-    else:
+    else: # d == 3
         c = -13.5
         z = np.array([[1, t] for t in range(1, T + 1)])
-        zgls = np.vstack([[1, 1], z[1:] - (1 + c/T) * z[:-1]])
         tipo_deterministico = "Intercepto + Tendencia"
 
-    ygls = np.concatenate([[A[0]], A[1:] - (1 + c/T) * A[:-1]])
-    psi = np.linalg.inv(zgls.T @ zgls) @ (zgls.T @ ygls)
-    yadf = A - (z @ psi)
+    # Construcción de las series transformadas
+    A_gls = np.concatenate([[A[0]], A[1:] - (1 + c/T) * A[:-1]])
+    z_gls = np.vstack([z[0], z[1:] - (1 + c/T) * z[:-1]])
+    
+    # Regresión GLS para obtener los coeficientes de la tendencia
+    psi = np.linalg.inv(z_gls.T @ z_gls) @ (z_gls.T @ A_gls)
+    
+    # Serie des-tendenciada
+    A_detrended = A - (z @ psi)
 
-    # --- Construcción de la matriz X ---
-    y_diff = np.diff(yadf)
+    # --- 2. Regresión ADF sobre la serie des-tendenciada ---
+    delta_A = np.diff(A_detrended)
+    A_lag = A_detrended[:-1]
     
-    X = np.ones((T-1, p+1))
-    X[:, 0] = yadf[:-1]
+    # Construcción de la matriz de regresión (X)
+    n_reg = len(delta_A)
+    X = np.ones((n_reg, p + 1))
+    X[:, 0] = A_lag
     
-    for j in range(1, p+1):
-        if j == 1:
-            X[:, j] = np.r_[np.nan, y_diff[:-1]]
-        else:
-            X[:, j] = np.r_[np.full(j, np.nan), y_diff[:-(j)]]
-    
-    # Eliminar filas con NaN
-    y_diff_valid = y_diff[p:]
+    for j in range(p):
+        X[:, j+1] = np.diff(A_detrended, n=1, prepend=np.nan)[j:j+n_reg]
+
+    # Eliminar filas con NaN creadas por los rezagos
     X_valid = X[p:, :]
+    delta_A_valid = delta_A[p:]
     
-    # --- Estimación de la regresión ADF ---
-    phi = np.linalg.lstsq(X_valid, y_diff_valid, rcond=None)[0]
-    residuals = y_diff_valid - X_valid @ phi
-    s2 = np.sum(residuals**2) / (len(y_diff_valid) - X_valid.shape[1])
+    # Estimación de la regresión ADF
+    phi = np.linalg.lstsq(X_valid, delta_A_valid, rcond=None)[0]
+    residuals = delta_A_valid - X_valid @ phi
+    s2 = np.sum(residuals**2) / (len(delta_A_valid) - X_valid.shape[1])
     
-    XTX_inv = np.linalg.inv(X_valid.T @ X_valid)
-    V = s2 * XTX_inv
+    try:
+        XTX_inv = np.linalg.inv(X_valid.T @ X_valid)
+        V = s2 * XTX_inv
+        adfgls_stat = phi[0] / np.sqrt(V[0, 0])
+    except np.linalg.LinAlgError:
+        # En caso de multicolinealidad, el test no es válido
+        return pd.DataFrame({
+            'Caso': [tipo_deterministico], 'Estadístico ADF-GLS': [np.nan],
+            'P-valor (interpolado)': ['Error'], 'Decisión': ['Error de cálculo'],
+            'Interpretación': ['Matriz singular, posible multicolinealidad.']
+        }).set_index('Caso')
     
-    adfgls_stat = phi[0] / np.sqrt(V[0, 0])
-    
-    # --- Cálculo del p-valor ---
-    p_value = stats.norm.cdf(adfgls_stat)
-
-    # --- Valores críticos y decisión ---
-    if d == 2:
+    if d == 2: # Solo intercepto
         criticos = {'1%': -2.57, '5%': -1.94, '10%': -1.62}
-    else:
+    else: # Intercepto y tendencia
         criticos = {'1%': -3.48, '5%': -2.89, '10%': -2.57}
     
-    clave_alpha = f'{int(alpha*100)}%'
-    valor_critico = criticos[clave_alpha]
-    rechazo_h0 = adfgls_stat < valor_critico
+    # Puntos para la interpolación (valores críticos y niveles de significancia)
+    critical_points = np.array(list(criticos.values()))
+    p_levels = np.array([0.01, 0.05, 0.10])
     
-    # --- Interpretación ---
-    if rechazo_h0:
-        interpretacion = "La serie es estacionaria"
-    else:
-        interpretacion = "La serie no es estacionaria"
-
-    # --- Crear tabla de resultados ---
-    resultados = pd.DataFrame({
-        'Parametro': [
-            'Estadistico ADF-GLS',
-            'Valor critico (' + clave_alpha + ')',
-            'p-valor (aproximado)',
-            'Decision',
-            'Interpretacion'
-        ],
-        'Valor': [
-            f"{adfgls_stat:.4f}",
-            f"{valor_critico:.4f}",
-            f"{p_value:.4f}",
-            "Rechazar H0" if rechazo_h0 else "No rechazar H0",
-            interpretacion
-        ]
+    # Calcular p-valor usando interpolación lineal
+    p_value = np.interp(adfgls_stat, critical_points, p_levels, right=1.0, left=0.01)
+    
+    return pd.DataFrame({
+        'model': [tipo_deterministico], 
+        'statistic': [adfgls_stat],
+        'p-value': [p_value],
     })
-    
-    return resultados

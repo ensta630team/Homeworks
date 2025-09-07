@@ -58,8 +58,7 @@ def test_df(serie_array: np.ndarray, estacionalizar = "no") -> pd.DataFrame:
     dy = yt-yt1
     # tendencia
     t = list(range(1,n))
-    print(len(dy))
-    print(len(t))
+
     # Dummies por mes
     meses = np.arange(n-1) % 12
     meses = np.eye(12)[meses]

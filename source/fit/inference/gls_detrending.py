@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
+from scipy import stats
 
-def test_gls(A, d=2, k=1):
+def test_gls(A, d=2, p=1, alpha=0.05):
     """
-    Implementación del test ADF-GLS que incluye una conclusión automática
-    para decidir sobre la estacionariedad.
+    Test ADF-GLS que retorna resultados en formato de tabla.
     
     Parámetros:
     -----------
@@ -14,100 +14,104 @@ def test_gls(A, d=2, k=1):
         Componente determinístico (default=2):
         2 = solo intercepto.
         3 = intercepto y tendencia.
-    k : int, opcional
-        Número de rezagos para la corrección de autocorrelación (default=1).
+    p : int, opcional
+        Orden autorregresivo del test.
+    alpha : float, opcional
+        Nivel de significancia (default=0.05).
         
     Retorna:
     --------
-    pd.DataFrame con los resultados y la conclusión del test.
+    pandas.DataFrame con los resultados del test.
     """
     
     A = np.array(A).flatten()
     T = len(A)
     
-    # --- Validación de Entradas ---
-    if d not in [2, 3]:
-        raise ValueError('Opción no válida: d debe ser 2 (intercepto) o 3 (intercepto + tendencia)')
-    
-    # --- Contenedor de Resultados ---
-    resultados = {}
+    # Validaciones
+    if T < 20:
+        raise ValueError("La serie es demasiado corta para el test ADF-GLS")
+    if p >= T:
+        raise ValueError("El orden p no puede ser mayor o igual al largo de la serie")
+    if alpha not in [0.01, 0.05, 0.10]:
+        raise ValueError("El nivel de significancia (alpha) debe ser 0.01, 0.05, o 0.10.")
 
-    # =========================================================================
-    # PASO 1: Eliminación de Tendencia con Mínimos Cuadrados Generalizados (GLS)
-    # =========================================================================
+    # --- Cálculos del test GLS ---
     if d == 2:
         c = -7.0
         z = np.ones((T, 1))
         zgls = np.vstack([[1], z[1:] - (1 + c/T) * z[:-1]])
+        tipo_deterministico = "Intercepto"
     else:
         c = -13.5
         z = np.array([[1, t] for t in range(1, T + 1)])
         zgls = np.vstack([[1, 1], z[1:] - (1 + c/T) * z[:-1]])
+        tipo_deterministico = "Intercepto + Tendencia"
 
     ygls = np.concatenate([[A[0]], A[1:] - (1 + c/T) * A[:-1]])
     psi = np.linalg.inv(zgls.T @ zgls) @ (zgls.T @ ygls)
     yadf = A - (z @ psi)
 
-    # ============================================================================
-    # PASO 2: Regresión de Dickey-Fuller Aumentado (ADF) sobre la serie sin tendencia
-    # ============================================================================
-    y_diff = yadf[k:] - yadf[k-1:-1]
-    X = np.zeros((T - k, k))
-    X[:, 0] = yadf[k-1:-1]
-    for j in range(1, k):
-        X[:, j] = (yadf[k-j-1:-j-1] - yadf[k-j-2:-j-2])
-        
-    phi = np.linalg.inv(X.T @ X) @ (X.T @ y_diff)
-    e = y_diff - (X @ phi)
-    s2 = (e.T @ e) / (X.shape[0] - X.shape[1])
-    V = s2 * np.linalg.inv(X.T @ X)
-
-    # =========================================================================
-    # PASO 3: Cálculo del Estadístico y Valores Críticos
-    # =========================================================================
+    # --- Construcción de la matriz X ---
+    y_diff = np.diff(yadf)
+    
+    X = np.ones((T-1, p+1))
+    X[:, 0] = yadf[:-1]
+    
+    for j in range(1, p+1):
+        if j == 1:
+            X[:, j] = np.r_[np.nan, y_diff[:-1]]
+        else:
+            X[:, j] = np.r_[np.full(j, np.nan), y_diff[:-(j)]]
+    
+    # Eliminar filas con NaN
+    y_diff_valid = y_diff[p:]
+    X_valid = X[p:, :]
+    
+    # --- Estimación de la regresión ADF ---
+    phi = np.linalg.lstsq(X_valid, y_diff_valid, rcond=None)[0]
+    residuals = y_diff_valid - X_valid @ phi
+    s2 = np.sum(residuals**2) / (len(y_diff_valid) - X_valid.shape[1])
+    
+    XTX_inv = np.linalg.inv(X_valid.T @ X_valid)
+    V = s2 * XTX_inv
+    
     adfgls_stat = phi[0] / np.sqrt(V[0, 0])
     
-    resultados['Estadistico'] = adfgls_stat
-    resultados['Valor P'] = 'No calculado'
-    
+    # --- Cálculo del p-valor ---
+    p_value = stats.norm.cdf(adfgls_stat)
+
+    # --- Valores críticos y decisión ---
     if d == 2:
         criticos = {'1%': -2.57, '5%': -1.94, '10%': -1.62}
     else:
         criticos = {'1%': -3.48, '5%': -2.89, '10%': -2.57}
-        
-    resultados['Valor Critico 1%'] = criticos['1%']
-    resultados['Valor Critico 5%'] = criticos['5%']
-    resultados['Valor Critico 10%'] = criticos['10%']
     
-    # =========================================================================
-    # NUEVO: PASO 4 - Decisión y Conclusión Automática
-    # =========================================================================
-    # Esta es la línea clave que permite tomar la decisión.
-    # Compara el estadístico con el valor crítico al 5% de significancia.
+    clave_alpha = f'{int(alpha*100)}%'
+    valor_critico = criticos[clave_alpha]
+    rechazo_h0 = adfgls_stat < valor_critico
     
-    if adfgls_stat < criticos['5%']:
-        conclusion = "El estadístico es MENOR que el valor crítico al 5%. Se rechaza H₀. La serie es ESTACIONARIA."
+    # --- Interpretación ---
+    if rechazo_h0:
+        interpretacion = "La serie es estacionaria"
     else:
-        conclusion = "El estadístico es MAYOR que el valor crítico al 5%. No se puede rechazar H₀. La serie tiene RAÍZ UNITARIA (no es estacionaria)."
-    
-    resultados['Conclusion (al 5%)'] = conclusion
-    
-    # --- Información Adicional ---
-    resultados['Componente deterministico'] = 'Intercepto' if d == 2 else 'Intercepto y Tendencia'
-    resultados['Numero de rezagos'] = k-1
-    resultados['Observaciones'] = T
-    
-    # --- Formateo Final ---
-    return pd.DataFrame(list(resultados.items()), columns=['Metrica', 'Valor'])
+        interpretacion = "La serie no es estacionaria"
 
-# --- Ejemplo de uso ---
-# np.random.seed(123)
-# serie_no_estacionaria = np.random.randn(100).cumsum() + 50
-# serie_estacionaria = np.random.randn(100)
-
-# print("--- Test para serie NO estacionaria ---")
-# resultados1 = test_gls(serie_no_estacionaria, d=2, k=4)
-# print(resultados1)
-# print("\n--- Test para serie ESTACIONARIA ---")
-# resultados2 = test_gls(serie_estacionaria, d=2, k=4)
-# print(resultados2)
+    # --- Crear tabla de resultados ---
+    resultados = pd.DataFrame({
+        'Parametro': [
+            'Estadistico ADF-GLS',
+            'Valor critico (' + clave_alpha + ')',
+            'p-valor (aproximado)',
+            'Decision',
+            'Interpretacion'
+        ],
+        'Valor': [
+            f"{adfgls_stat:.4f}",
+            f"{valor_critico:.4f}",
+            f"{p_value:.4f}",
+            "Rechazar H0" if rechazo_h0 else "No rechazar H0",
+            interpretacion
+        ]
+    })
+    
+    return resultados

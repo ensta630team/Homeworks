@@ -1,112 +1,140 @@
 import numpy as np
 import pandas as pd
 
-def test_pp(A, q=4, regression='all'):
+def test_pp(A, q=4, regression='all', alpha=0.05):
     """
-    Test de Phillips-Perron
+    Realiza el test de raíz unitaria de Phillips-Perron y retorna una
+    tabla completa con resultados, decisión e interpretación.
+
+    Hipótesis Nula (H₀): La serie tiene una raíz unitaria (no es estacionaria).
+    Hipótesis Alternativa (H₁): La serie es estacionaria.
+
+    Parámetros:
+    -----------
+    A : array-like
+        La serie de tiempo a analizar.
+    q : int, opcional
+        El número de rezagos para el estimador de varianza de largo plazo.
+    regression : {'case1', 'case2', 'case4', 'all'}, opcional
+        El tipo de regresión a realizar.
+    alpha : float, opcional
+        Nivel de significancia para la decisión (e.g., 0.01, 0.05, 0.10).
+
+    Retorna:
+    --------
+    pandas.DataFrame
+        Una tabla ordenada con el valor del estadístico Z-t, valor crítico,
+        p-valor aproximado, decisión del test e interpretación.
     """
     
-    A = np.asarray(A, dtype=float)
-    Y = A[1:]
-    T = len(Y)
-    Cte = np.ones(T)
-    Trend = np.arange(1, T + 1)
-    Rezago = A[:-1]
+    # Coeficientes de MacKinnon (1996) para los valores críticos del Z-t
+    MACKINNON_COEFS = {
+        'case1': { # Sin constante
+            '1%': [-2.5657, -3.76, -11.0], '5%': [-1.9410, -1.13, -2.8], '10%': [-1.6168, -0.36, -1.1]
+        },
+        'case2': { # Con constante
+            '1%': [-3.4303, -17.86, -86.8], '5%': [-2.8615, -6.49, -27.2], '10%': [-2.5668, -3.52, -12.9]
+        },
+        'case4': { # Con constante y tendencia
+            '1%': [-3.9588, -28.69, -187.9], '5%': [-3.4105, -12.58, -63.3], '10%': [-3.1271, -8.11, -39.0]
+        }
+    }
     
-    # Se definen las matrices de regresores
-    X1 = Rezago.reshape(-1, 1)
-    X2 = np.column_stack([Cte, Rezago])
-    X4 = np.column_stack([Cte, Rezago, Trend])
+    # --- Funciones auxiliares ---
     
-    # Estimación MCO
-    Beta1 = np.linalg.inv(X1.T @ X1) @ X1.T @ Y if regression in ['case1', 'all'] else None
-    Beta2 = np.linalg.inv(X2.T @ X2) @ X2.T @ Y if regression in ['case2', 'all'] else None
-    Beta4 = np.linalg.inv(X4.T @ X4) @ X4.T @ Y if regression in ['case4', 'all'] else None
-    
-    # Contenedores para los resultados
-    resultados = []
-    
-    def calculate_autocov(residuals, lag, T):
-        """Calculo de la autocovarianza sum(u_t * u_{t-j}) / T."""
-        if lag == 0:
-            return np.dot(residuals, residuals) / T
-        return np.dot(residuals[lag:], residuals[:-lag]) / T
+    def _calculate_pp_stats(residuals, T, q, rho, var_rho, s2):
+        """Calcula los estadísticos Z-rho y Z-t."""
+        def calculate_autocov(res, lag, n_obs):
+            return np.dot(res[lag:], res[:-lag]) / n_obs if lag > 0 else np.dot(res, res) / n_obs
 
-    # --- Caso 1: Sin constante ni tendencia ---
-    if regression in ['case1', 'all'] and Beta1 is not None:
-        rho1 = Beta1[0]
-        Resid1 = Y - X1 @ Beta1
-        k1 = X1.shape[1]
-        s2_1 = (Resid1.T @ Resid1) / (T - k1)
-        VarMCO1 = s2_1 * np.linalg.inv(X1.T @ X1)
-        sigmarho1 = np.sqrt(VarMCO1[0, 0])
-        
-        AutoCov1 = np.array([calculate_autocov(Resid1, j, T) for j in range(q + 1)])
-        
-        # --- Cálculo de Lambda^2  ---
-        aux1 = np.zeros(q)
-        for j in range(1, q + 1):
-            aux1[j-1] = (1 - (j / (q + 1))) * AutoCov1[j-1] 
-        
-        lambda2_1 = np.zeros(q)
-        for j in range(1, q + 1):
-            lambda2_1[j-1] = AutoCov1[0] + 2 * np.sum(aux1[0:j])
-        # --------------------------------------------------------------------
+        autocov = np.array([calculate_autocov(residuals, j, T) for j in range(q + 1)])
+        gamma0 = autocov[0]
+        gamma_j = autocov[1:]
+        weights = 1 - np.arange(1, q + 1) / (q + 1)
+        lambda2 = gamma0 + 2 * np.sum(weights * gamma_j)
 
-        Zrho1 = T * (rho1 - 1) - 0.5 * ((T**2 * VarMCO1[0, 0]) / s2_1) * (lambda2_1 - AutoCov1[0])
+        if lambda2 < 1e-9: lambda2 = 1e-9
         
-        for i in range(q):
-            resultados.append({'Metrica': f'Zrho Case1 (q={i+1})', 'Valor': Zrho1[i]})
+        se_rho = np.sqrt(var_rho)
+        z_t = (((rho - 1) / se_rho) * np.sqrt(gamma0 / lambda2) -
+               (T * se_rho / np.sqrt(lambda2 * s2)) * (lambda2 - gamma0) * 0.5)
+        return z_t
 
-    # --- Caso 2: Con constante ---
-    if regression in ['case2', 'all'] and Beta2 is not None:
-        rho2 = Beta2[1]
-        Resid2 = Y - X2 @ Beta2
-        k2 = X2.shape[1]
-        s2_2 = (Resid2.T @ Resid2) / (T - k2)
-        VarMCO2 = s2_2 * np.linalg.inv(X2.T @ X2)
-        sigmarho2 = np.sqrt(VarMCO2[1, 1])
+    def _get_decision_details(z_t, case, T, alpha):
+        """Calcula valores críticos, p-valor y genera la decisión."""
+        # Calcula el valor crítico para un nivel de significancia dado
+        def get_cv(level):
+            c_inf, c_1, c_2 = MACKINNON_COEFS[case][level]
+            return c_inf + c_1 / T + c_2 / (T**2)
+
+        cv_1, cv_5, cv_10 = get_cv('1%'), get_cv('5%'), get_cv('10%')
         
-        AutoCov2 = np.array([calculate_autocov(Resid2, j, T) for j in range(q + 1)])
-        
-        aux2 = np.zeros(q)
-        for j in range(1, q + 1):
-            aux2[j-1] = (1 - (j / (q + 1))) * AutoCov2[j-1]
-        
-        lambda2_2 = np.zeros(q)
-        for j in range(1, q + 1):
-            lambda2_2[j-1] = AutoCov2[0] + 2 * np.sum(aux2[0:j])
-        
-        Zrho2 = T * (rho2 - 1) - 0.5 * ((T**2 * VarMCO2[1, 1]) / s2_2) * (lambda2_2 - AutoCov2[0])
-        
-        for i in range(q):
-            resultados.append({'Metrica': f'Zrho Case2 (q={i+1})', 'Valor': Zrho2[i]})
+        # P-valor aproximado
+        if z_t < cv_1: p_value_approx = '< 0.01'
+        elif z_t < cv_5: p_value_approx = 'entre 0.01 y 0.05'
+        elif z_t < cv_10: p_value_approx = 'entre 0.05 y 0.10'
+        else: p_value_approx = '> 0.10'
             
-    # --- Caso 4: Con constante y tendencia ---
-    if regression in ['case4', 'all'] and Beta4 is not None:
-        rho4 = Beta4[1]
-        Resid4 = Y - X4 @ Beta4
-        k4 = X4.shape[1]
-        s2_4 = (Resid4.T @ Resid4) / (T - k4)
-        VarMCO4 = s2_4 * np.linalg.inv(X4.T @ X4)
-        sigmarho4 = np.sqrt(VarMCO4[1, 1])
-        
-        AutoCov4 = np.array([calculate_autocov(Resid4, j, T) for j in range(q + 1)])
-        
-        aux4 = np.zeros(q)
-        for j in range(1, q + 1):
-            aux4[j-1] = (1 - (j / (q + 1))) * AutoCov4[j-1]
+        # Determinar el valor crítico relevante para la decisión
+        if alpha == 0.01: critical_value = cv_1
+        elif alpha == 0.05: critical_value = cv_5
+        elif alpha == 0.10: critical_value = cv_10
+        else: critical_value = get_cv(f'{int(alpha*100)}%') # Falla si no es 1, 5, o 10
+            
+        # Decisión e interpretación
+        if z_t < critical_value:
+            decision = f'Rechazar H₀ (α={alpha})'
+            interpretation = 'La serie es estacionaria'
+        else:
+            decision = f'No Rechazar H₀ (α={alpha})'
+            interpretation = 'La serie tiene una raíz unitaria'
+            
+        return critical_value, p_value_approx, decision, interpretation
 
-        lambda2_4 = np.zeros(q)
-        for j in range(1, q + 1):
-            lambda2_4[j-1] = AutoCov4[0] + 2 * np.sum(aux4[0:j])
-            
-        Zrho4 = T * (rho4 - 1) - 0.5 * ((T**2 * VarMCO4[1, 1]) / s2_4) * (lambda2_4 - AutoCov4[0])
-        Zt4 = ((rho4 - 1) / sigmarho4) * np.sqrt(AutoCov4[0] / lambda2_4) - \
-              0.5 * (lambda2_4 - AutoCov4[0]) / np.sqrt(lambda2_4) * (T * sigmarho4 / np.sqrt(s2_4))
+    # --- Preparación de datos y ejecución ---
+    A = np.asarray(A, dtype=float).flatten()
+    Y, T, Rezago = A[1:], len(A[1:]), A[:-1]
+    
+    resultados_finales = []
+    
+    # Diccionario para mapear regresiones
+    cases = {
+        'case1': ('Sin constante ni tendencia', Rezago.reshape(-1, 1), 0),
+        'case2': ('Con constante', np.column_stack([np.ones(T), Rezago]), 1),
+        'case4': ('Con constante y tendencia', np.column_stack([np.ones(T), np.arange(1, T + 1), Rezago]), 2)
+    }
+
+    regressions_to_run = cases.keys() if regression == 'all' else [regression]
+
+    for case_key in regressions_to_run:
+        nombre, X, rho_idx = cases[case_key]
+        k = X.shape[1]
         
-        for i in range(q):
-            resultados.append({'Metrica': f'Zrho Case4 (q={i+1})', 'Valor': Zrho4[i]})
-            resultados.append({'Metrica': f'Zt Case4 (q={i+1})', 'Valor': Zt4[i]})
+        try:
+            Beta = np.linalg.solve(X.T @ X, X.T @ Y)
+            rho = Beta[rho_idx]
+            Resid = Y - X @ Beta
+            s2 = np.dot(Resid, Resid) / (T - k)
+            VarMCO = s2 * np.linalg.inv(X.T @ X)
+            var_rho = VarMCO[rho_idx, rho_idx]
             
-    return pd.DataFrame(resultados)
+            z_t = _calculate_pp_stats(Resid, T, q, rho, var_rho, s2)
+            cv, pval, dec, interp = _get_decision_details(z_t, case_key, T, alpha)
+            
+            resultados_finales.append({
+                'Caso': nombre,
+                'Estadístico Z-t': z_t,
+                f'Valor Crítico ({int(alpha*100)}%)': cv,
+                'P-valor (aprox.)': pval,
+                'Decisión': dec,
+                'Interpretación': interp
+            })
+        except np.linalg.LinAlgError:
+            # En caso de multicolinealidad o matriz singular
+            resultados_finales.append({
+                'Caso': nombre, 'Estadístico Z-t': np.nan,
+                f'Valor Crítico ({int(alpha*100)}%)': np.nan, 'P-valor (aprox.)': 'Error',
+                'Decisión': 'Error de cálculo', 'Interpretación': 'No se pudo estimar el modelo'
+            })
+
+    return pd.DataFrame(resultados_finales).set_index('Caso')

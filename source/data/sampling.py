@@ -194,6 +194,17 @@ def create_time_series(kind, n_obs, randseed=None, ss=False,**kwargs):
         trend = np.linspace(0, 1, n_obs)
         series += kwargs.get('trend_magnitude', 5.0) * trend**2
         return series
-    
+    elif kind == 'longterm_unit_root':
+        if randseed is not None: np.random.seed(randseed+10)
+        ar_params = np.array([0, 0, 0, 0, 1])
+        ma_params = np.array([0]) 
+        
+        # El formato para statsmodels es [1, -φ_1, -φ_2, ...]
+        series = sm.tsa.arma_generate_sample(
+            ar=np.r_[1, -ar_params], 
+            ma=np.r_[1, ma_params], 
+            nsample=n_obs
+        )
+        return series
     else:
         raise ValueError("Tipo de serie no reconocido.")

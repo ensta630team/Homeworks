@@ -5,6 +5,7 @@ import statsmodels.api as sm
 import os
 
 from source.models.ols import OLS
+
 from statsmodels.tsa.api import VAR
 from statsmodels.tsa.ar_model import AutoReg
 from statsmodels.stats.diagnostic import acorr_ljungbox
@@ -98,12 +99,12 @@ def hannan_rissanen_con_ljungbox(datos, max_rezagos=15, verbose=True):
     for p in pbar:
         model = VAR(endog=datos)
         results = model.fit(maxlags=p, ic=None)
-
+        
         # Criterios de información
         aic = results.aic
         bic = results.bic
         hqic = results.hqic
-
+        
         ljung_box_results = results.test_whiteness(nlags=2*p, signif=0.05)
         lb_pvalue = ljung_box_results.pvalue
 
@@ -150,23 +151,35 @@ def find_best_p(serie, break_point, input_fn=None, p_max=12):
             if np.linalg.matrix_rank(X) < X.shape[1]:
                 continue # Salta esta iteración
             
-            ols_model = OLS()
-            ols_model.fit(X, y)
-            
-            T = X.shape[0]  # Nro de observaciones efectivas
-            k = X.shape[1]  # Nro de regresores (incluye dummies, lags, etc.)
-            
-            residuals = y - ols_model.predict(X)
-            ssr = np.sum(residuals**2)
-            sigma2_hat = ssr / T
-            
-            bic = np.log(sigma2_hat) + (k * np.log(T)) / T
-            aic = np.log(sigma2_hat) + (2 * k) / T
-            hqc = np.log(sigma2_hat) + (2 * k * np.log(np.log(T))) / T
 
-            metrics.append({'p': p, 'BIC': bic, 'AIC': aic, 'HQC': hqc})
+            model = sm.OLS(y, X)
+            results = model.fit()
+
+            # bic = model.bic
+            # aic = model.aic
+            # hqc = model.hqic
+            tstat = results.tvalues[3]
+
+            # ols_model = OLS()
+            # ols_model.fit(X, y)
+            
+            # T = X.shape[0]  # Nro de observaciones efectivas
+            # k = X.shape[1]  # Nro de regresores (incluye dummies, lags, etc.)
+            
+            # residuals = y - ols_model.predict(X)
+            # ssr = np.sum(residuals**2)
+            # sigma2_hat = ssr / T
+
+            # ols_model.beta
+
+            # bic = np.log(sigma2_hat) + (k * np.log(T)) / T
+            # aic = np.log(sigma2_hat) + (2 * k) / T
+            # hqc = np.log(sigma2_hat) + (2 * k * np.log(np.log(T))) / T
+
+            metrics.append({'p': p, 't':tstat})
         
-        except Exception:
+        except Exception as e:
+            print(e)
             continue
 
     if not metrics:

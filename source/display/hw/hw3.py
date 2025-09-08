@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from typing import Optional
+from typing import Optional, List
 
 
 def configure_matplotlib_for_latex():

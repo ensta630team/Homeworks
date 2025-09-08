@@ -1,6 +1,35 @@
 import pandas as pd 
 import numpy as np
+import json
 
+from typing import Optional, Dict, Any
+
+
+def load_json(ruta_archivo: str) -> Optional[Dict[str, Any]]:
+    """
+    Abre y carga un archivo JSON de forma segura.
+
+    Args:
+        ruta_archivo: La ruta (path) del archivo JSON que se desea abrir.
+
+    Returns:
+        Un diccionario de Python con el contenido del JSON si la operación
+        es exitosa. Devuelve None si ocurre algún error.
+    """
+    try:
+        with open(ruta_archivo, 'r', encoding='utf-8') as archivo:
+            datos = json.load(archivo)
+            return datos
+    except FileNotFoundError:
+        print(f"Error: El archivo no fue encontrado en la ruta: '{ruta_archivo}'")
+        return None
+    except json.JSONDecodeError:
+        print(f"Error: El archivo en '{ruta_archivo}' no tiene un formato JSON válido.")
+        return None
+    except Exception as e:
+        print(f"Ocurrió un error inesperado: {e}")
+        return None
+    
 def load_data(path):
     """
     Carga datos desde diferentes formatos de archivo (CSV, Excel, TXT).

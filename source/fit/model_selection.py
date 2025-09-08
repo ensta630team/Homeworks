@@ -1,12 +1,17 @@
 import numpy as np
-from statsmodels.tsa.api import VAR
 import warnings
 import pandas as pd
+import statsmodels.api as sm
+
+from statsmodels.tsa.api import VAR
+
 
 # Suprimir advertencias para una salida más limpia
 warnings.filterwarnings("ignore")
 
-def hannan_rissanen(datos, max_rezagos=15, verbose=True):
+
+
+def hannan_rissanen(datos, break_point=50, max_rezagos=15, verbose=True, model_type='var', inp_fn=None):
     """
     Evalúa diferentes órdenes de rezago (p) para un modelo VAR y devuelve
     una tabla con los criterios de información AIC, BIC y HQIC.
@@ -16,45 +21,55 @@ def hannan_rissanen(datos, max_rezagos=15, verbose=True):
                             donde las columnas son las variables y las filas son
                             las observaciones.
         max_rezagos (int): El número máximo de rezagos a evaluar.
-
+        model (str): var, ar
     Returns:
         pandas.DataFrame: Una tabla con los valores de AIC, BIC y HQIC para
                           cada orden de rezago p.
     """
+
+
     resultados = []
-    print("Evaluando órdenes de rezago del 1 al {}...".format(max_rezagos))
+    if verbose:
+        print("Evaluando órdenes de rezago del 1 al {}...".format(max_rezagos))
     
     pbar = range(1, max_rezagos + 1)
     for p in pbar:
-        model = VAR(endog=datos)
-        results = model.fit(maxlags=p)
+        if model_type == 'var':
+            model = VAR(endog=datos)
+            results = model.fit(maxlags=p)
+            aic = results.aic
+            bic = results.bic
+            hqic = results.hqic
+            
+        elif model_type == 'ar':
+            # Crear input si es necesario
+            if inp_fn is not None:
+                X, y = inp_fn(datos, break_point=break_point, p=p)
+            else:
+                continue
+
+            model = sm.OLS(y, X)
+            results = model.fit()
+            logL = results.llf
+            T = results.nobs
+            k = results.df_model # Número de parámetros estimados
+            
+            aic = -2 * logL + 2 * k
+            bic = -2 * logL + k * np.log(T)
+            hqic = -2 * logL + 2 * k * np.log(np.log(T))
+
+        else:
+            raise ValueError("El modelo debe ser 'var' o 'ar'.")
         
-        # Recolectar los criterios de información
-        aic = results.aic
-        bic = results.bic
-        hqic = results.hqic
         resultados.append({'p': p, 'AIC': aic, 'BIC': bic, 'HQIC': hqic})
 
     # Convertir la lista de resultados en un DataFrame
     df_resultados = pd.DataFrame(resultados).set_index('p')
-    print("Evaluación completada.")
+    if verbose:
+        print("Evaluación completada.")
     return df_resultados
-import numpy as np
-from statsmodels.tsa.api import VAR
-import warnings
-import pandas as pd
 
-# Suprimir advertencias para una salida más limpia
 warnings.filterwarnings("ignore")
-
-import numpy as np
-from statsmodels.tsa.api import VAR
-import warnings
-import pandas as pd
-
-# Suprimir advertencias para una salida más limpia
-warnings.filterwarnings("ignore")
-
 def hannan_rissanen_con_ljungbox(datos, max_rezagos=15, verbose=True):
     """
     Evalúa diferentes órdenes de rezago (p) para un modelo VAR y devuelve
@@ -85,10 +100,6 @@ def hannan_rissanen_con_ljungbox(datos, max_rezagos=15, verbose=True):
         bic = results.bic
         hqic = results.hqic
 
-        # ======================================================================
-        # CORRECCIÓN AQUÍ: Usar nlags=2*p en lugar de nlags=p
-        # El número de rezagos del test (nlags) debe ser > que los del modelo (p).
-        # ======================================================================
         ljung_box_results = results.test_whiteness(nlags=2*p, signif=0.05)
         lb_pvalue = ljung_box_results.pvalue
 

@@ -100,7 +100,6 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         m_optimo, k_optimo = m, k
 
     nombre_modelo = f'Bierens(m={m_optimo}, k={k_optimo})'
-    
     try:
         if m_optimo is None: raise ValueError("No se encontró (m,k) óptimo.")
         
@@ -121,7 +120,7 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         if m_optimo == 0:
             res = Y - X @ beta; res_var = np.sum(res**2)/(n_obs-len(beta)); cov = res_var*np.linalg.inv(X.T @ X)
             stat_final = rho_estimado / np.sqrt(np.diag(cov))[idx_rho]
-            nombre_modelo = f'ADF(k={k_optimo})' # Es un ADF, no Bierens
+            nombre_modelo = f'Bierens(m=0, k={k_optimo})' # Es un ADF, no Bierens
         else: # Para m > 0, se reporta Z_rho
             suma_coef_lags = 0
             if k_optimo > 0:

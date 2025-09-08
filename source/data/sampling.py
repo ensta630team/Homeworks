@@ -161,21 +161,22 @@ def create_time_series(kind, n_obs, randseed=None, ss=False,**kwargs):
         series = np.cumsum(np.random.normal(0, 1, n_obs))
         return series
     
+    elif kind == 'break_ss':
+        if randseed is not None: np.random.seed(randseed+4)
+        break_point = kwargs.get('break_point', int(n_obs * 0.5))
+        break_magnitude = kwargs.get('break_magnitude', 5.0)
+        ar_params = np.array([0.5])
+        ma_params = np.array([0])
+        series = sm.tsa.arma_generate_sample(ar=np.r_[1, -ar_params], ma=np.r_[1, ma_params], nsample=n_obs)
+        series[break_point:] += break_magnitude
+        return series
     elif kind == 'break':
         if randseed is not None: np.random.seed(randseed+4)
-        if ss:
-            break_point = kwargs.get('break_point', int(n_obs * 0.5))
-            break_magnitude = kwargs.get('break_magnitude', 5.0)
-            ar_params = np.array([0.5])
-            ma_params = np.array([0])
-            series = sm.tsa.arma_generate_sample(ar=np.r_[1, -ar_params], ma=np.r_[1, ma_params], nsample=n_obs)
-            series[break_point:] += break_magnitude
-        else:
-            # Paseo aleatorio con quiebre estructural
-            break_point = kwargs.get('break_point', int(n_obs * 0.5))
-            break_magnitude = kwargs.get('break_magnitude', 5.0)
-            series = np.cumsum(np.random.normal(0, 1, n_obs))
-            series[break_point:] += break_magnitude
+        # Paseo aleatorio con quiebre estructural
+        break_point = kwargs.get('break_point', int(n_obs * 0.5))
+        break_magnitude = kwargs.get('break_magnitude', 5.0)
+        series = np.cumsum(np.random.normal(0, 1, n_obs))
+        series[break_point:] += break_magnitude
         return series
     
     elif kind == 'outlier':

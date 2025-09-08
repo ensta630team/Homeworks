@@ -91,3 +91,106 @@ def plot_series(data: dict,
     fig.tight_layout()
 
     return fig, axes
+
+def plot_dummy_comparison(
+    data: pd.DataFrame,
+    break_point: int,
+    window: int = 10,
+    fig: Optional[plt.Figure] = None,
+    ax: Optional[plt.Axes] = None,
+    title: str = 'Comparación de Variables Dummy',
+    xlabel: str = 'Periodo',
+    ylabel: str = 'Valor Dummy'
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Grafica la comparación de dos series dummy y una línea vertical para un punto de quiebre.
+
+    Args:
+        data (pd.DataFrame): DataFrame que contiene los datos.
+        break_point (int): Posición en el eje x para la línea vertical.
+        window (int): Número de periodos a mostrar antes y después del punto de quiebre.
+        fig (Optional[plt.Figure]): Figura de Matplotlib existente (opcional).
+        ax (Optional[plt.Axes]): Ejes de Matplotlib existentes (opcional).
+        title (str): Título del gráfico.
+        xlabel (str): Etiqueta del eje X.
+        ylabel (str): Etiqueta del eje Y.
+
+    Returns:
+        tuple[plt.Figure, plt.Axes]: La figura y los ejes del gráfico.
+    """
+    # Si no se proporcionan ejes (ax), se crea una nueva figura y ejes
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 4))
+    else:
+        # Si se proporcionan los ejes, se obtiene la figura a la que pertenecen
+        fig = ax.get_figure()
+
+    # Definir el rango de datos a graficar usando la ventana
+    start = break_point - window
+    end = break_point + window
+    
+    # Graficar las dos series
+    ax.plot(data['du'][start:end], linestyle='-', color='k', lw=2, label='Modelo A')
+    ax.plot(data['dt_star'][start:end], linestyle='--', color='darkred', label='Modelo B')
+
+    # Añadir la línea vertical
+    ax.axvline(x=break_point, color='darkgreen', linestyle=':', label='Break Point')
+
+    # Configurar etiquetas, título y leyenda usando los tamaños de fuente definidos
+    ax.set_title(title, fontsize=FONT_SIZES['title'])
+    ax.set_ylabel(ylabel, fontsize=FONT_SIZES['label'])
+    ax.set_xlabel(xlabel, fontsize=FONT_SIZES['label'])
+    ax.legend(fontsize=FONT_SIZES['legend'], loc='upper left')
+    ax.tick_params(axis='both', which='major', labelsize=FONT_SIZES['tick'])
+    ax.set_xticks(range(start, end + 1))
+
+
+    fig.tight_layout()
+
+    return fig, ax
+
+
+def plot_series_comparison(
+    data: pd.DataFrame,
+    fig: Optional[plt.Figure] = None,
+    ax: Optional[plt.Axes] = None,
+    title: str = 'Comparación de Series de Tiempo',
+    xlabel: str = 'Tiempo',
+    ylabel: str = 'Valor'
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Grafica dos series de tiempo de un DataFrame para su comparación.
+
+    Args:
+        data (pd.DataFrame): DataFrame que contiene los datos.
+        fig (Optional[plt.Figure]): Figura de Matplotlib existente (opcional).
+        ax (Optional[plt.Axes]): Ejes de Matplotlib existentes (opcional).
+        title (str): Título del gráfico.
+        xlabel (str): Etiqueta del eje X.
+        ylabel (str): Etiqueta del eje Y.
+
+    Returns:
+        tuple[plt.Figure, plt.Axes]: La figura y los ejes del gráfico.
+    """
+    # Si no se proporcionan ejes (ax), se crea una nueva figura y ejes
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 6))
+    else:
+        # Si se proporcionan los ejes, se obtiene la figura a la que pertenecen
+        fig = ax.get_figure()
+
+    # Graficar las dos series con estilos y etiquetas personalizadas
+    ax.plot(data['break'], label='Break Random Walk', color='darkblue', linewidth=1.5)
+    ax.plot(data['break_ss'], label='Break Estacionaria', color='darkred', linestyle='--', linewidth=1.5)
+
+    # Configurar etiquetas, título y leyenda usando los tamaños de fuente definidos
+    ax.set_title(title, fontsize=FONT_SIZES['title'])
+    ax.set_xlabel(xlabel, fontsize=FONT_SIZES['label'])
+    ax.set_ylabel(ylabel, fontsize=FONT_SIZES['label'])
+    ax.tick_params(axis='both', which='major', labelsize=FONT_SIZES['tick'])
+    ax.legend(fontsize=FONT_SIZES['legend'])
+    ax.grid(True)
+    
+    fig.tight_layout()
+
+    return fig, ax

@@ -9,46 +9,12 @@ from source.data.sampling import create_time_series
 from source.data.loaders import load_json
 from source.models.ols import OLS
 from source.fit.error import get_standard_error
-from source.fit.model_selection import hannan_rissanen, find_best_p
+from source.fit.model_selection import find_best_p
 
 
-def get_perron_critical_value(lambda_val, model_type="model_a", significance="5%", json_path='./data/perron_critical_values.json'):
-    """
-    Obtiene el valor crítico de Perron, interpolando si es necesario.
-
-    Args:
-        lambda_val (float): La posición del quiebre (e.g., 0.25).
-        model_type (str): 'model_a', 'model_b', o 'model_c'.
-        significance (str): '1%', '2.5%', '5%', o '10%'.
-        json_path (str): Ruta al archivo JSON con los valores críticos.
-
-    Returns:
-        float: El valor crítico (interpolado si es necesario).
-    """
-    critical_values_data = load_json(json_path)
-
-    table = critical_values_data[model_type][significance]
-    
-    # Convertir las claves (lambdas de la tabla) a float
-    table_lambdas = sorted([float(k) for k in table.keys()])
-    
-    # Caso 1: El lambda está exactamente en la tabla
-    if lambda_val in table_lambdas:
-        return table[str(lambda_val)]
-
-    # Caso 2: Necesitamos interpolar
-    # Encontrar los lambdas que rodean nuestro valor
-    lambda_1 = max([l for l in table_lambdas if l < lambda_val])
-    lambda_2 = min([l for l in table_lambdas if l > lambda_val])
-
-    cv_1 = table[str(lambda_1)]
-    cv_2 = table[str(lambda_2)]
-
-    # Aplicar la fórmula de interpolación lineal
-    interpolated_cv = cv_1 + (lambda_val - lambda_1) * (cv_2 - cv_1) / (lambda_2 - lambda_1)
-    
-    return interpolated_cv
-
+# ===========================================================================
+# Modelos ===================================================================
+# ===========================================================================
 def _create_base_regression(serie, break_point, p=1):
     """
     Función auxiliar robusta que evita eliminar dummies por error.
@@ -91,15 +57,11 @@ def _create_base_regression(serie, break_point, p=1):
     df.dropna(inplace=True)
     
     return df
-
-# ===========================================================================
-# Modelos ===================================================================
-# ===========================================================================
 def create_model_a(serie, break_point, p=1):
     """Crash Model"""
     df = _create_base_regression(serie, break_point, p)
     
-    regressor_cols = ['intercept', 'y_lag1', 'trend', 'd_u', 'd_tb']
+    regressor_cols = ['intercept', 'y_lag1', 'trend', 'd_tb', 'd_u']
     for i in range(1, p + 1):
         regressor_cols.append(f'delta_y_lag{i}')
     df.dropna(inplace=True)
@@ -113,7 +75,7 @@ def create_model_b(serie, break_point, p=1):
     df = _create_base_regression(serie, break_point, p)
 
     # Definir regresores y alinear
-    regressor_cols = ['intercept', 'y_lag1', 'trend', 'dt_star', 'd_u']
+    regressor_cols = ['intercept', 'y_lag1', 'trend', 'd_u', 'dt_star']
     for i in range(1, p + 1):
         regressor_cols.append(f'delta_y_lag{i}')
     df.dropna(inplace=True)
@@ -137,6 +99,46 @@ def create_model_c(serie, break_point, p=1):
     X = df[regressor_cols].values
     y = df['delta_y'].values
     return X, y
+
+### ======================================================================
+### CRITICAL VALUES ======================================================
+### ======================================================================
+def get_perron_critical_value(lambda_val, model_type="model_a", significance="5%", json_path='./data/perron_critical_values.json'):
+    """
+    Obtiene el valor crítico de Perron, interpolando si es necesario.
+
+    Args:
+        lambda_val (float): La posición del quiebre (e.g., 0.25).
+        model_type (str): 'model_a', 'model_b', o 'model_c'.
+        significance (str): '1%', '2.5%', '5%', o '10%'.
+        json_path (str): Ruta al archivo JSON con los valores críticos.
+
+    Returns:
+        float: El valor crítico (interpolado si es necesario).
+    """
+    critical_values_data = load_json(json_path)
+
+    table = critical_values_data[model_type][significance]
+    
+    # Convertir las claves (lambdas de la tabla) a float
+    table_lambdas = sorted([float(k) for k in table.keys()])
+    
+    # Caso 1: El lambda está exactamente en la tabla
+    if lambda_val in table_lambdas:
+        return table[str(lambda_val)]
+
+    # Caso 2: Necesitamos interpolar
+    # Encontrar los lambdas que rodean nuestro valor
+    lambda_1 = max([l for l in table_lambdas if l < lambda_val])
+    lambda_2 = min([l for l in table_lambdas if l > lambda_val])
+
+    cv_1 = table[str(lambda_1)]
+    cv_2 = table[str(lambda_2)]
+
+    # Aplicar la fórmula de interpolación lineal
+    interpolated_cv = cv_1 + (lambda_val - lambda_1) * (cv_2 - cv_1) / (lambda_2 - lambda_1)
+    
+    return interpolated_cv
 
 def get_perron_p_value(t_statistic, lambda_val, 
                        model_type="model_a", 
@@ -167,6 +169,10 @@ def get_perron_p_value(t_statistic, lambda_val,
 
     return p_value
 
+
+# ========================================================================
+# ========================================================================
+# ========================================================================
 def grid_perron_parallel(serie, trim=0.15, variablename=''):
     """
     Versión paralela de grid_perron que distribuye la búsqueda
@@ -180,7 +186,6 @@ def grid_perron_parallel(serie, trim=0.15, variablename=''):
                                  ('model_b', create_model_b),
                                  ('model_c', create_model_c)]:
         
-
         # 1. Prepara la lista de tareas (una tupla de args para cada bp)
         tasks = [(bp, serie, model_type, input_fn, variablename) for bp in grid]
         
@@ -199,11 +204,39 @@ def grid_perron_parallel(serie, trim=0.15, variablename=''):
 
     return pd.concat(all_model_results, axis=0)
     	
-def test_perron(serie, varname=''):
+def test_perron(serie, varname='', breakpoint=None):
     print('Test Perron')
 
     # Si el breakpoint es desconocido, elegimos la función a ejecutar
-    dataframes = grid_perron_parallel(serie=serie, variablename=varname)
+    if breakpoint is not None:
+        dataframes = []
+        for model_type, input_fn in [('model_a', create_model_a),
+                                    ('model_b', create_model_b),
+                                    ('model_c', create_model_c)]:
+            
+            # Crear el input dle modelo
+            presult = find_best_p(serie, breakpoint, input_fn=input_fn, p_max=50)
+            p_star = presult.loc[presult['t'].idxmin()]['p'].astype(int)
+            
+            X, y = input_fn(serie=serie, break_point=breakpoint, p=p_star)
+
+            model = sm.OLS(y, X)
+            results = model.fit()
+            tstat = results.tvalues[3]
+            lambda_val = breakpoint / len(serie)
+            pvalue = get_perron_p_value(tstat, lambda_val, model_type=model_type)
+
+            current =  pd.DataFrame({
+                'model': [model_type],
+                'break': [breakpoint],
+                'pstar': [p_star],
+                'statistic': [tstat],
+                'p-value': [pvalue]
+            })
+            dataframes.append(current)
+        dataframes = pd.concat(dataframes, axis=0)
+    else:
+        dataframes = grid_perron_parallel(serie=serie, variablename=varname)
 
     # El resto de la lógica para encontrar el mejor resultado no cambia
     if dataframes.empty:
@@ -223,7 +256,7 @@ def _process_breakpoint(args):
     bp, serie, model_type, input_fn, variablename = args
     try:
         # Crear el input dle modelo
-        presult = find_best_p(serie, bp, input_fn=input_fn, p_max=6)
+        presult = find_best_p(serie, bp, input_fn=input_fn, p_max=5)
         p_star = presult.loc[presult['t'].idxmin()]['p'].astype(int)
         
         # Guardar para ver despues
@@ -237,14 +270,6 @@ def _process_breakpoint(args):
         model = sm.OLS(y, X)
         results = model.fit()
         tstat = results.tvalues[3]
-        # ols_model = OLS()
-        # ols_model.fit(X, y)
-        # beta_hat = ols_model.beta
-
-        # y_pred = ols_model.predict(X)
-        # s_hat = get_standard_error(X, y, y_pred=y_pred)
-        # tstat = beta_hat.flatten()[3] / s_hat[3] 
-
         lambda_val = bp / len(serie)
         pvalue = get_perron_p_value(tstat, lambda_val, model_type=model_type)
 
@@ -257,6 +282,6 @@ def _process_breakpoint(args):
         })
 
     except Exception as e:
-        # Si algo falla para un breakpoint, devolvemos None para ignorarlo
+        print(e)
         return None
     

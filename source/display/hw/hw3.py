@@ -131,7 +131,7 @@ def plot_dummy_comparison(
     end = break_point + window
     
     # Graficar las dos series
-    ax.plot(data['du'][start:end], linestyle='-', color='k', lw=2, label='Modelo A')
+    ax.plot(data['d_u'][start:end], linestyle='-', color='k', lw=2, label='Modelo A')
     ax.plot(data['dt_star'][start:end], linestyle='--', color='darkred', label='Modelo B')
 
     # Añadir la línea vertical

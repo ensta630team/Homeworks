@@ -8,7 +8,9 @@ def test_df(serie_array: np.ndarray, estacionalizar = "no") -> pd.DataFrame:
     ## ------------ Trabando las series ------------
     serie = serie_array
     n = len(serie)
+    print(n)
     yt = serie[1:n]
+    print(len(yt))
     yt1 = serie[0:n-1]
     # Delta y
     dy = yt-yt1

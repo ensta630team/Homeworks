@@ -86,7 +86,7 @@ def test_murray_nelson(serie_array: np.ndarray, periodo:None,  persistent:None =
     result = {
         'statistic': estadistico,
         'p-value': valorp,
-        #'compro1': stat,
+        'model': 'murray_nelson'
         #'compro2': pval
     }
 

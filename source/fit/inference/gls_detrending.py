@@ -41,20 +41,23 @@ def test_gls(A, d=2, p=1, alpha=0.05):
         c = -7.0
         z = np.ones((T, 1))
         tipo_deterministico = "Intercepto"
-    else: # d == 3
+    else:  # d == 3
         c = -13.5
         z = np.array([[1, t] for t in range(1, T + 1)])
         tipo_deterministico = "Intercepto + Tendencia"
 
     # Construcción de las series transformadas
-    A_gls = np.concatenate([[A[0]], A[1:] - (1 + c/T) * A[:-1]])
-    z_gls = np.vstack([z[0], z[1:] - (1 + c/T) * z[:-1]])
-    
+    A_gls = A - (1 + c/T) * np.roll(A, 1)
+    A_gls[0] = A[0] # El primer elemento de A_gls es el primer elemento de A
+
+    z_gls = z - (1 + c/T) * np.roll(z, 1, axis=0)
+    z_gls[0] = z[0] # El primer elemento de z_gls es el primer elemento de z
+
     # Regresión GLS para obtener los coeficientes de la tendencia
     psi = np.linalg.inv(z_gls.T @ z_gls) @ (z_gls.T @ A_gls)
-    
+
     # Serie des-tendenciada
-    A_detrended = A - (z @ psi)
+    A_detrended = A - (z @ psi).flatten()
 
     # --- 2. Regresión ADF sobre la serie des-tendenciada ---
     delta_A = np.diff(A_detrended)
@@ -65,10 +68,11 @@ def test_gls(A, d=2, p=1, alpha=0.05):
     X = np.ones((n_reg, p + 1))
     X[:, 0] = A_lag
     
+    # Asignar los rezagos de delta_A
     for j in range(p):
-        X[:, j+1] = np.diff(A_detrended, n=1, prepend=np.nan)[j:j+n_reg]
-
-    # Eliminar filas con NaN creadas por los rezagos
+        X[j:, j+1] = delta_A[:n_reg-j] # Esta es la línea de corrección
+    
+    # Eliminar las primeras 'p' filas con valores no válidos
     X_valid = X[p:, :]
     delta_A_valid = delta_A[p:]
     
@@ -84,7 +88,7 @@ def test_gls(A, d=2, p=1, alpha=0.05):
     except np.linalg.LinAlgError:
         # En caso de multicolinealidad, el test no es válido
         return pd.DataFrame({
-            'Caso': [tipo_deterministico], 'Estadístico ADF-GLS': [np.nan],
+            'GLS Caso': [tipo_deterministico], 'Estadístico ADF-GLS': [np.nan],
             'P-valor (interpolado)': ['Error'], 'Decisión': ['Error de cálculo'],
             'Interpretación': ['Matriz singular, posible multicolinealidad.']
         }).set_index('Caso')

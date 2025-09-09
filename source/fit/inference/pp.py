@@ -26,7 +26,7 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
         Una tabla ordenada con el valor del estadístico Z-t, valor crítico,
         p-valor aproximado, decisión del test e interpretación.
     """
-    
+    print("Test PP")
     # Coeficientes de MacKinnon (1996) para los valores críticos del Z-t
     MACKINNON_COEFS = {
         'case1': { # Sin constante
@@ -93,9 +93,9 @@ def test_pp(A, q=4, regression='all', alpha=0.05):
     
     # Diccionario para mapear regresiones
     cases = {
-        'case1': ('Sin constante ni tendencia', Rezago.reshape(-1, 1), 0),
-        'case2': ('Con constante', np.column_stack([np.ones(T), Rezago]), 1),
-        'case4': ('Con constante y tendencia', np.column_stack([np.ones(T), np.arange(1, T + 1), Rezago]), 2)
+        'case1': ('pp - Sin constante ni tendencia', Rezago.reshape(-1, 1), 0),
+        'case2': ('pp - Con constante', np.column_stack([np.ones(T), Rezago]), 1),
+        'case4': ('pp - Con constante y tendencia', np.column_stack([np.ones(T), np.arange(1, T + 1), Rezago]), 2)
     }
 
     regressions_to_run = cases.keys() if regression == 'all' else [regression]

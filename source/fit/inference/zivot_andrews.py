@@ -180,15 +180,15 @@ def test_zivot_andrews_v2(serie, varname=''):
     Realiza el test de raíz unitaria de Zivot-Andrews con la función de statsmodels.
     Compara los tres modelos (A, B, C) y retorna el mejor resultado para cada uno.
     """
-    print('Test Zivot-Andrews con statsmodels')
+    print('Test Zivot-Andrews')
     
     results = []
 
     # Mapeo de tus modelos a los parámetros de regresión de statsmodels
     model_types = {
-        'model_a': 'c',   # Quiebre en el nivel (intercept)
-        'model_b': 't',   # Quiebre en la tendencia
-        'model_c': 'ct'   # Quiebre en el nivel y la tendencia
+        'za_model_a': 'c',   # Quiebre en el nivel (intercept)
+        'za_model_b': 't',   # Quiebre en la tendencia
+        'za_model_c': 'ct'   # Quiebre en el nivel y la tendencia
     }
     
     # Iterar sobre cada tipo de modelo para obtener el mejor resultado de cada uno

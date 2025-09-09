@@ -4,13 +4,14 @@ from statsmodels.tsa.stattools import mackinnonp
 #from statsmodels.tsa.stattools import adfuller
 
 def test_df(serie_array: np.ndarray, estacionalizar = "no") -> pd.DataFrame:
+  print("Test DF")
   if estacionalizar == "no":
     ## ------------ Trabando las series ------------
     serie = serie_array
     n = len(serie)
-    print(n)
+    # print(n)
     yt = serie[1:n]
-    print(len(yt))
+    # print(len(yt))
     yt1 = serie[0:n-1]
     # Delta y
     dy = yt-yt1
@@ -45,6 +46,7 @@ def test_df(serie_array: np.ndarray, estacionalizar = "no") -> pd.DataFrame:
     result = {
         'statistic': estadistico,
         'p-value': valorp,
+        'model': 'df',
         #'compro1': stat,
         #'compro2': pval
     }
@@ -91,6 +93,7 @@ def test_df(serie_array: np.ndarray, estacionalizar = "no") -> pd.DataFrame:
     result = {
         'statistic': estadistico,
         'p-value': valorp,
+        'model': 'df',
         #'compro1': stat,
         #'compro2': pval
     }

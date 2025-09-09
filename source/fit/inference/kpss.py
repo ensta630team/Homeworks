@@ -22,6 +22,7 @@ def test_kpss(series, tipo="c", alpha=0.05):
     """
     Realiza el test de KPSS y devuelve el estadístico, p-value y una conclusión.
     """
+    print("Test KPSS")
     # 0. Preparación de datos
     y = pd.Series(series).dropna()
     T = len(y)
@@ -77,10 +78,13 @@ def test_kpss(series, tipo="c", alpha=0.05):
 
         # Retornar los resultados en un DataFrame
         result_df = pd.DataFrame({
-            'model': [tipo],
+            'model': ['kpss_'+tipo],
             'statistic': [stat],
             'p-value': [p_value],
             'conclusion': [conclusion]
         })
         results_models.append(result_df)
+
+
+        
     return pd.concat(results_models, axis=0)

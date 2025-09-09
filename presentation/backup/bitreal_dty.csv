@@ -1,0 +1,14 @@
+model,p-value
+ADF-c,
+pp - Sin constante ni tendencia,0.01
+pp - Con constante,0.01
+pp - Con constante y tendencia,0.01
+kpss_c,0.01
+kpss_ct,0.01
+model_a,0.99
+model_b,0.9096721367861518
+model_c,0.9362203163664108
+za_model_a,0.02526953055156208
+za_model_b,0.16006441283242057
+za_model_c,0.04833323247537881
+murray_nelson,

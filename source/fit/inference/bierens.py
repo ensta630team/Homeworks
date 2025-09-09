@@ -27,20 +27,31 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         1: {'1%': -29.7, '5%': -22.0, '10%': -18.3},
         2: {'1%': -37.0, '5%': -27.2, '10%': -23.0},
         3: {'1%': -46.2, '5%': -35.6, '10%': -30.9},
-        4: {'1%': -52-2, '5%': -41.6, '10%': -36.6},
+        4: {'1%': -52.2, '5%': -41.6, '10%': -36.6},
         5: {'1%': -61.1, '5%': -48.7, '10%': -43.4},
         6: {'1%': -66.9, '5%': -54.7, '10%': -49.1},
         7: {'1%': -74.8, '5%': -61.8, '10%': -55.8},
         8: {'1%': -80.6, '5%': -67.9, '10%': -61.7},
         9: {'1%': -88.9, '5%': -74.4, '10%': -67.7},
-       10: {'1%': -94.2, '5%': -80.3, '10%': -73.7}
+        10: {'1%': -94.2, '5%': -80.3, '10%': -73.7},
+        11: {'1%': -101.8, '5%': -87.1, '10%': -80.0},
+        12: {'1%': -109.9, '5%': -93.7, '10%': -85.7},
+        13: {'1%': -117.0, '5%': -100.0, '10%': -92.1},
+        14: {'1%': -124.2, '5%': -106.0, '10%': -98.0},
+        15: {'1%': -130.2, '5%': -112.4, '10%': -104.0},
+        16: {'1%': -136.9, '5%': -118.9, '10%': -109.7},
+        17: {'1%': -144.9, '5%': -125.5, '10%': -116.3},
+        18: {'1%': -151.2, '5%': -132.2, '10%': -122.8},
+        19: {'1%': -157.5, '5%': -139.9, '10%': -129.6},
+        20: {'1%': -164.1, '5%': -145.7, '10%': -135.6}
     }
     ADF_CV_C = {'1%': -3.43, '5%': -2.86, '10%': -2.57} # Para el caso m=0 (Z_t)
 
-    def polinomios_chebyshev(T, p):
+    # --- Funciones Auxiliares Anidadas ---
+    def _polinomios_chebyshev(T, p):
+        # (Función auxiliar para generar la matriz Pol, sin cambios)
         if p == 0: return None
-        t_vals = np.arange(1, T + 1)
-        k_vals = np.arange(1, p + 1)
+        t_vals = np.arange(1, T + 1); k_vals = np.arange(1, p + 1)
         i_grid, k_grid = np.meshgrid(t_vals, k_vals, indexing='ij')
         P = np.sqrt(2) * np.cos(k_grid * np.pi * (i_grid - 0.5) / T)
         tn = t_vals / T; x0 = np.ones(T)
@@ -62,40 +73,58 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         POL[:, 0] = (t_vals - (T + 1) / 2) / np.sqrt((T**2 - 1) / 12)
         return pd.DataFrame(POL, columns=[f'POL_{i+1}' for i in range(p)])
 
-    def _encontrar_km_optimos(series, max_k, max_m, alpha):
+    def _encontrar_km_optimos_bic(series, max_k, max_m):
+        """Encuentra (m, k) que minimizan el BIC, iterando primero sobre k."""
         yt = pd.Series(series, name='y'); delta_yt = yt.diff().rename('delta_y'); T = len(yt)
-        for i_m in range(max_m + 1):
-            matriz_Pol = polinomios_chebyshev(T, i_m * 2) if i_m > 0 else None
-            for i_k in range(max_k + 1):
+        
+        best_bic = np.inf
+        best_m, best_k = 0, 0
+
+        # --- BUCLES INVERTIDOS ---
+        for i_k in range(max_k + 1):
+            for i_m in range(max_m + 1):
+                matriz_Pol = _polinomios_chebyshev(T, i_m * 2) if i_m > 0 else None
                 y_lag_1 = yt.shift(1).rename('y_lag_1')
                 vars_unir = [delta_yt.to_frame(), y_lag_1.to_frame()]
                 if i_k > 0:
                     lags = pd.DataFrame({f'd_y_lag_{i}': delta_yt.shift(i) for i in range(1, i_k + 1)})
                     vars_unir.append(lags)
                 if i_m > 0: vars_unir.append(matriz_Pol.iloc[:, :i_m+1])
+                
                 df = pd.concat(vars_unir, axis=1).dropna()
+                n_obs = len(df)
+                if n_obs < (i_k + i_m + 2): continue
+
                 Y = df['delta_y']; X = df.drop('delta_y', axis=1); X.insert(0, 'const', 1)
-                beta = np.linalg.inv(X.T @ X) @ (X.T @ Y); res = Y - X @ beta
-                p_val = acorr_ljungbox(res, lags=[min(10, len(res)//5)], return_df=True)['lb_pvalue'].iloc[0]
-                if p_val > alpha: return i_m, i_k
-        return None, None
+                
+                try:
+                    beta = np.linalg.inv(X.T @ X) @ (X.T @ Y); res = Y - X @ beta
+                    ssr = np.sum(res**2)
+                    num_params = X.shape[1]
+                    bic = n_obs * np.log(ssr / n_obs) + num_params * np.log(n_obs)
+                    
+                    if bic < best_bic:
+                        best_bic = bic
+                        best_m, best_k = i_m, i_k
+                except np.linalg.LinAlgError:
+                    continue
+        return best_m, best_k
 
     def _interpolar_p_valor(estadistico, m):
+        # (Función sin cambios)
         if m > 0:
-            if m not in BIERENS_CV_RHO: return np.nan # No hay CVs para este m
+            if m not in BIERENS_CV_RHO: return np.nan
             cv = BIERENS_CV_RHO[m]
-        else: # m == 0, se usa la tabla ADF
-            cv = ADF_CV_C
-
+        else: cv = ADF_CV_C
         cv1, cv5, cv10 = cv['1%'], cv['5%'], cv['10%']
         p_levels = np.array([0.01, 0.05, 0.10])
         critical_values = np.array([cv1, cv5, cv10])
-        
         return np.interp(estadistico, critical_values, p_levels, right=1.0)
 
     # --- Lógica Principal del Test ---
     if m is None or k is None:
-        m_optimo, k_optimo = _encontrar_km_optimos(serie, max_k, max_m, alpha)
+        # Usamos la nueva función de búsqueda con BIC
+        m_optimo, k_optimo = _encontrar_km_optimos_bic(serie, max_k, max_m)
     else:
         m_optimo, k_optimo = m, k
 
@@ -104,7 +133,7 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         if m_optimo is None: raise ValueError("No se encontró (m,k) óptimo.")
         
         yt = pd.Series(serie, name='y'); delta_yt = yt.diff().rename('delta_y'); T = len(yt)
-        matriz_Pol = polinomios_chebyshev(T, m_optimo * 2) if m_optimo > 0 else None
+        matriz_Pol = _polinomios_chebyshev(T, m_optimo * 2) if m_optimo > 0 else None
         y_lag_1 = yt.shift(1).rename('y_lag_1'); vars_unir = [delta_yt.to_frame(), y_lag_1.to_frame()]
         if k_optimo > 0:
             lags = pd.DataFrame({f'd_y_lag_{i}': delta_yt.shift(i) for i in range(1, k_optimo + 1)})
@@ -116,19 +145,18 @@ def test_bierens(serie: np.ndarray, m: int = None, k: int = None, max_k: int = 1
         beta = np.linalg.inv(X.T @ X) @ (X.T @ Y)
         idx_rho = X.columns.get_loc('y_lag_1'); rho_estimado = beta[idx_rho]
         
-        # El caso m=0 es especial: se reporta el t-stat (Z_t)
         if m_optimo == 0:
             res = Y - X @ beta; res_var = np.sum(res**2)/(n_obs-len(beta)); cov = res_var*np.linalg.inv(X.T @ X)
             stat_final = rho_estimado / np.sqrt(np.diag(cov))[idx_rho]
-            nombre_modelo = f'Bierens(m=0, k={k_optimo})' # Es un ADF, no Bierens
-        else: # Para m > 0, se reporta Z_rho
+            nombre_modelo = f'Bierens(k={k_optimo})'
+        else:
             suma_coef_lags = 0
             if k_optimo > 0:
                 nombres_lags = [col for col in X.columns if 'd_y_lag' in col]
                 indices_lags = [X.columns.get_loc(nombre) for nombre in nombres_lags]
                 suma_coef_lags = np.sum(beta[indices_lags])
             stat_final = (n_obs * rho_estimado) / (1 - suma_coef_lags) if (1 - suma_coef_lags) != 0 else np.nan
-
+        
         p_valor_aprox = _interpolar_p_valor(stat_final, m_optimo)
         resultado = {'model': nombre_modelo, 'statistic': stat_final, 'p-value': p_valor_aprox}
 

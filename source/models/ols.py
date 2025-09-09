@@ -1,4 +1,6 @@
 import numpy as np
+import statsmodels.api as sm
+
 
 class OLS:
     """
@@ -26,7 +28,6 @@ class OLS:
             XX_inv = np.linalg.inv(X.T @ X)
             self.beta = XX_inv @ X.T @ y
         except np.linalg.LinAlgError:
-            print("Error: La matriz X'X es singular y no se puede invertir.")
             self.beta = np.full(X.shape[1], np.nan)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
